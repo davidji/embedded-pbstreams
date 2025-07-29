@@ -1,0 +1,17 @@
+[package]
+name = "embedded-pbstreams"
+version = "0.1.0"
+authors = ["David Ireland <davidji@pobox.com>"]
+description = "Use protocol buffers with COBS encoding on embedded devices"
+license = "Apache-2.0"
+categories = ["embedded", "no-std" ]
+keywords = ["protocol buffers" ]
+repository = "https://github.com/davidji/embedded-pbstreams"
+homepage = "https://github.com/davidji/embedded-pbstreams"
+edition = "2021"
+
+[dependencies]
+defmt = "1.0.1"
+rtic-sync = { version = "1.4.0", features = ["defmt-03" ]}
+micropb = { version = "0.3.0", features = ["container-heapless"] }
+cobs = { version = "0.4.0",  default-features = false, features = [ "defmt" ] }
