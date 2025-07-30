@@ -1,21 +1,23 @@
 
 use core::{
     option::Option,
+    pin::Pin,
     result::Result,
+    task::{ Context, Poll },
 };
 
 use rtic_sync::channel::{ NoReceiver, Receiver, Sender };
-use crate::stream::{ ByteConsumer, ByteSupplier, Supplier, Consumer };
+use crate::stream::{ ByteSink, ByteStream, Sink, Stream };
 
-pub struct ChannelSupplier <'a, T, const N: usize> (Receiver<'a, T, N>);
+pub struct ChannelStream <'a, T, const N: usize> (Receiver<'a, T, N>);
 
-impl <'a, T, const N: usize>  ChannelSupplier<'a, T, N> {
+impl <'a, T, const N: usize>  ChannelStream<'a, T, N> {
     pub fn new(receiver: Receiver<'a, T, N>) -> Self {
-        ChannelSupplier(receiver)
+        ChannelStream(receiver)
     }
 }
 
-impl <'a, T, const N: usize> Supplier for ChannelSupplier<'a, T, N> {
+impl <'a, T, const N: usize> Stream for ChannelStream<'a, T, N> {
     type Item = T;
 
     async fn next(&mut self) -> Option<T> {
@@ -26,27 +28,27 @@ impl <'a, T, const N: usize> Supplier for ChannelSupplier<'a, T, N> {
     }
 }
 
-impl <'a, const N: usize> ByteSupplier for ChannelSupplier<'a, u8, N> {
+impl <'a, const N: usize> ByteStream for ChannelStream<'a, u8, N> {
 
 }
 
-pub struct ChannelConsumer<'a, T, const N: usize>(Sender<'a, T, N>);
+pub struct ChannelSink<'a, T, const N: usize>(Sender<'a, T, N>);
 
-impl <'a, T, const N: usize> ChannelConsumer<'a, T, N> {
+impl <'a, T, const N: usize> ChannelSink<'a, T, N> {
     pub fn new(sender: Sender<'a, T, N>) -> Self {
-        ChannelConsumer(sender)
+        ChannelSink(sender)
     }
 }
 
-impl <'a, T, const N: usize> Consumer for ChannelConsumer<'a, T, N> {
+impl <'a, T, const N: usize> Sink for ChannelSink<'a, T, N> {
     type Item = T;
     type Error = NoReceiver<T>;
 
-    async fn accept(&mut self, item: T) -> Result<(), Self::Error> {
+    async fn send(&mut self, item: T) -> Result<(), Self::Error> {
         self.0.send(item).await
     }
 }
 
-impl <'a, const N: usize> ByteConsumer for ChannelConsumer<'a, u8, N> {
+impl <'a, const N: usize> ByteSink for ChannelSink<'a, u8, N> {
 
 }

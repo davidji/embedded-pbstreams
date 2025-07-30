@@ -1,13 +1,16 @@
 
 
 
-use core::marker::PhantomData;
+use core::{
+    marker::PhantomData,
+    option::Option,
+};
 
 use micropb::{ MessageDecode, MessageEncode, PbDecoder, PbEncoder, PbWrite };
 use defmt::{ debug, error };
 use cobs::{ CobsDecoder, CobsEncoder, DestBufTooSmallError };
 
-use crate::stream::{ ByteSupplier , ByteConsumer, Supplier, Consumer };
+use crate::stream::{ ByteStream , ByteSink, Sink, Stream };
 
 pub struct Decoder<I, O, const BN: usize> {
     input: I,
@@ -15,7 +18,7 @@ pub struct Decoder<I, O, const BN: usize> {
     target: PhantomData<O>,
 }
 
-impl <I: ByteSupplier, O, const BN: usize> Decoder<I, O, BN> {
+impl <I: ByteStream, O, const BN: usize> Decoder<I, O, BN> {
     pub fn new(requests: I) -> Self {
         Decoder { input: requests, buffer: [0; BN], target: PhantomData::default() }
     }
@@ -45,7 +48,7 @@ impl <I: ByteSupplier, O, const BN: usize> Decoder<I, O, BN> {
     }
 }
 
-impl <I: ByteSupplier, O, const BN: usize> Supplier for Decoder<I, O, BN>
+impl <I: ByteStream, O, const BN: usize> Stream for Decoder<I, O, BN>
 where O: MessageEncode + MessageDecode + Default {
     type Item = O;
 
@@ -92,12 +95,12 @@ impl <I, O, const BN: usize> Encoder<I, O, BN> {
     }
 }
 
-impl <I, O: ByteConsumer, const BN: usize> Consumer for Encoder<I, O, BN> 
+impl <I, O: ByteSink, const BN: usize> Sink for Encoder<I, O, BN> 
 where I: MessageEncode {
     type Item = I;
     type Error = O::Error;
 
-    async fn accept(&mut self, message: I) -> Result<(), O::Error> {
+    async fn send(&mut self, message: I) -> Result<(), O::Error> {
         let mut buffer: [u8;BN] = [0;BN];
         let mut cobs = PbCobsEncoder::new(&mut buffer);
         let mut encoder = PbEncoder::new(&mut cobs);
@@ -106,9 +109,9 @@ where I: MessageEncode {
                 let size = cobs.0.finalize();
                 debug!("sending response {:x}", buffer[0..size]);
                 for data in buffer[0..size].iter() {
-                    self.output.accept(*data).await?
+                    self.output.send(*data).await?
                 }
-                self.output.accept(0).await
+                self.output.send(0).await
             },
             Err(DestBufTooSmallError) => panic!("destination buffer too small")
         }
