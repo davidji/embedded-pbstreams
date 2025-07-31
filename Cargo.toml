@@ -1,18 +1,26 @@
 [package]
-name = "embedded-pbstreams"
+name = "rtic2-usb-gadget"
 version = "0.1.0"
 authors = ["David Ireland <davidji@pobox.com>"]
-description = "Use protocol buffers with COBS encoding on embedded devices"
+description = "Utilities for creating USB-Ethernet Gadgets"
 license = "Apache-2.0"
 categories = ["embedded", "no-std" ]
-keywords = ["protocol buffers" ]
-repository = "https://github.com/davidji/embedded-pbstreams"
-homepage = "https://github.com/davidji/embedded-pbstreams"
+keywords = ["usb ethernet protobuf" ]
+repository = "https://github.com/davidji/rtic2-usb-gadget"
+homepage = "https://github.com/davidji/rtic2-usb-gadget"
 edition = "2021"
 
 [dependencies]
-defmt = "1.0.1"
-rtic-sync = { version = "1.4.0", features = ["defmt-03" ]}
-micropb = { version = "0.3.0", features = ["container-heapless"] }
 cobs = { version = "0.4.0",  default-features = false, features = [ "defmt" ] }
+defmt = "1.0.1"
+fugit = "0.3.7"
+futures = { version = "0.3.31", default-features = false, features=["async-await"] }
+micropb = { version = "0.3.0", features = ["container-heapless"] }
+rtic-sync = { version = "1.4.0", features = ["defmt-03" ]}
+usb-device = "0.3.2"
+usbd-ethernet = { version = "0.4.0", features = [ "defmt" ] }
 
+[dependencies.smoltcp]
+version = "0.12"
+default-features = false
+features = [ "defmt", "socket-tcp", "socket-dhcpv4", "proto-ipv4", ]
