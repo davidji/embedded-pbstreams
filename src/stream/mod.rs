@@ -2,7 +2,7 @@
 pub mod channel;
 
 use core::{
-    result::Result,
+    future::Future, result::Result
 };
 
 /// A trait for an asynchronous stream of items.
@@ -11,8 +11,7 @@ use core::{
 pub trait Stream {
     type Item;
 
-    // Using async here despite the warnings. Concenient for now.
-    async fn next(&mut self) -> Option<Self::Item>;
+    fn next(&mut self) -> impl Future<Output = Option<Self::Item>>;
 }
 
 pub trait ByteStream: Stream<Item = u8> {}
@@ -26,8 +25,7 @@ pub trait Sink {
     type Item;
     type Error;
 
-    // Using async here despite the warnings. Concenient for now.
-    async fn send(&mut self, item: Self::Item) -> Result<(), Self::Error>;
+    fn send(&mut self, item: Self::Item) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
 pub async fn relay<I, O, T, E>(input: &mut I,  output: &mut O) -> Result<(), E>

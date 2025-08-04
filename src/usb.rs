@@ -291,8 +291,7 @@ impl <'a, CLOCK: Clock, U: UsbBus> Gadget<'a, CLOCK, U> {
             clock: PhantomData,
         }
     }
-
-    
+   
 
     fn usb_device(usb_bus_allocator: &UsbBusAllocator<U>) -> UsbDevice<'_, U> {
         UsbDeviceBuilder::new(
@@ -359,7 +358,8 @@ impl <'a, CLOCK: Clock, U: UsbBus> Gadget<'a, CLOCK, U> {
             for channel in channels {
                 data |= match channel.try_send(&mut self.sockets) {
                     Ok(sent) => sent,
-                    Err(_) => panic!("Error reading from channel reciever")
+                    Err(ReceiveError::Empty) => false,
+                    Err(ReceiveError::NoSender) => panic!("Error reading from channel reciever: No sender")
                 }
             }
 

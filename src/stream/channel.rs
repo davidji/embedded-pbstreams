@@ -1,9 +1,7 @@
 
 use core::{
     option::Option,
-    pin::Pin,
     result::Result,
-    task::{ Context, Poll },
 };
 
 use rtic_sync::channel::{ NoReceiver, Receiver, Sender };

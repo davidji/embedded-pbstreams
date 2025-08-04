@@ -1,17 +1,10 @@
-# Embedded protocol buffer streams
+# RTIC 2 USB-Ethernet Gadgets
 
-This is simply a way to use protocol buffers over an unreliable stream:
-messages are delimited by zero bytes, so a consumer can resume at
-a message boundary if bytes in the stream are lost. Messages are
-encoded using COBS. Of course you can also use it on a reliable stream:
-it's just a convenient and low overhead way to communicate with a
-microcontroller.
+This is somewhere between a library and a software stack for creating USB gadgets that
+look like ethernet devices.
 
-The message encoding is protocol buffers, because that means you
-can use any programming language you like on the host side. Cargo
-isn't very good at compiling to different architectures in the
-same project, so it's often convenient to write test harnesses
-in Python, for example.
+The gadget exposes TCP services that send and receive COBS encoded, zero delimted
+protocol buffer messages.
 
-Use this at you own risk: I'm new to almost everything involved: Rust,
-async, RTIC.
+Protocol buffers, because they are low overhead for a micro controller, have a good
+Rust implementation in [micropb]()
