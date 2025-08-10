@@ -14,8 +14,13 @@ use smoltcp::{
 };
 
 use usbd_ethernet::{ Ethernet, DeviceState };
-use usb_device::{bus::{UsbBus, UsbBusAllocator}, device::{StringDescriptors, UsbDevice, UsbDeviceBuilder, UsbVidPid}, UsbError};
+use usb_device::{
+    bus::UsbBus, 
+    device::{StringDescriptors, UsbDevice, UsbDeviceBuilder, UsbVidPid}, 
+    UsbError
+};
 
+pub use usb_device::bus::UsbBusAllocator;
 
 
 pub const IP_ADDRESS: Ipv4Address = Ipv4Address::new(0, 0, 0, 0);
@@ -125,7 +130,6 @@ pub struct SendChannel<'a, const N: usize> {
 impl <const N: usize> SendChannel<'_, N> {
     pub async fn send(&mut self,  sockets: &mut SocketSet<'_>) -> Result<bool, ReceiveError> {
         poll_fn(|_cx| {
-
             match self.try_send(sockets) {
                 Ok(false) => Poll::Pending,
                 Ok(true) => Poll::Ready(Ok(true)),
@@ -249,12 +253,19 @@ pub trait Clock {
     fn now() -> Self::Instant;
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum IpState {
+    Unconfigured,
+    Configured,
+}
+
 pub struct Gadget<'a, CLOCK: Clock, U: UsbBus> {
     pub ethernet: Ethernet<'a, U>,
     interface: Interface,
     sockets: SocketSet<'a>,
     dhcp: SocketHandle,
     usb_device: UsbDevice<'a, U>,
+    state: IpState,
     clock: PhantomData<CLOCK>,
 }
 
@@ -288,6 +299,7 @@ impl <'a, CLOCK: Clock, U: UsbBus> Gadget<'a, CLOCK, U> {
             sockets,
             dhcp,
             usb_device: Self::usb_device(usb_bus_allocator),
+            state: IpState::Unconfigured,
             clock: PhantomData,
         }
     }
@@ -296,13 +308,15 @@ impl <'a, CLOCK: Clock, U: UsbBus> Gadget<'a, CLOCK, U> {
     fn usb_device(usb_bus_allocator: &UsbBusAllocator<U>) -> UsbDevice<'_, U> {
         UsbDeviceBuilder::new(
             usb_bus_allocator,
-            UsbVidPid(0x16c0, 0x27dd),
+            UsbVidPid(0x1209, 0x0004),
         )
-        .device_class(usbd_ethernet::USB_CLASS_CDC)
         .strings(&[StringDescriptors::default()
-            .manufacturer("paraxial")
-            .product("pcb-mill")
+            .manufacturer("none")
+            .product("none")
             .serial_number("aux")])
+        .unwrap()
+        .device_class(usbd_ethernet::USB_CLASS_CDC)
+        .max_packet_size_0(64)
         .unwrap()
         .build()
     }
@@ -344,17 +358,43 @@ impl <'a, CLOCK: Clock, U: UsbBus> Gadget<'a, CLOCK, U> {
         }
     }
 
-    pub fn connected(&mut self) -> bool {
+    pub fn connected(& self) -> bool {
         self.ethernet.state() == DeviceState::Connected
     }
     
-    pub fn try_send<const N: usize>(&mut self, channels: &mut [SendChannel<N>]) {
-        if !self.usb_device.poll(&mut [&mut self.ethernet]) {
-            return;
-        }
+    pub fn configured(& self) -> bool {
+        self.state == IpState::Configured
+    }
 
+    pub fn poll<const N: usize>(&mut self, send: &mut [SendChannel<N>], recv: &mut [RecvChannel<N>]) {
+        if (self.usb_device.poll(&mut [&mut self.ethernet]) && self.recv_channels(recv))
+            || self.send_channels(send) 
+            || !self.configured() {
+                self.usb_send();
+        }
+    }
+
+    pub fn try_send<const N: usize>(&mut self, channels: &mut [SendChannel<N>]) {
+        debug!("sending");
+        self.usb_device.poll(&mut [&mut self.ethernet]);
+
+        if self.send_channels(channels) || !self.configured() {
+            self.usb_send();
+        }
+    }
+
+    fn usb_send(&mut self) {
+        debug!("data available, sending");
+        self.interface.poll_egress(
+            Self::now(), 
+            &mut self.ethernet, 
+            &mut self.sockets);
+    }
+    
+    fn send_channels<const N: usize>(&mut self, channels: &mut [SendChannel<'_, N>]) -> bool {
+        let mut data = false;
         if self.connected() {
-            let mut data = false;
+            debug!("connected");
             for channel in channels {
                 data |= match channel.try_send(&mut self.sockets) {
                     Ok(sent) => sent,
@@ -362,39 +402,43 @@ impl <'a, CLOCK: Clock, U: UsbBus> Gadget<'a, CLOCK, U> {
                     Err(ReceiveError::NoSender) => panic!("Error reading from channel reciever: No sender")
                 }
             }
-
-            if data {
-                self.interface.poll_egress(Self::now(), &mut self.ethernet, &mut self.sockets);
-            }
+    
+    
         } else {
             self.connect();
         }
+        data
     }
-
+    
     pub fn try_recv<const N: usize>(&mut self, channels: &mut [RecvChannel<N>]) {
+        info!("receiving");
         if !self.usb_device.poll(&mut [&mut self.ethernet]) {
+            debug!("nothing to do");
             return;
         }
 
+        if self.recv_channels(channels) {
+            self.usb_send();
+        }
+    }
+
+    fn recv_channels<const N: usize>(&mut self, channels: &mut [RecvChannel<'_, N>]) -> bool {
         let data = match self.interface.poll(Self::now(), &mut self.ethernet, &mut self.sockets) {
             iface::PollResult::SocketStateChanged => true,
             iface::PollResult::None => false
         };
-
+    
         self.dhcp_poll();
-
+    
         let mut ack = false;
         if data {
             for channel in channels {
                 ack |= channel.try_recv(&mut self.sockets);
             }
         }
-
-        if ack {
-            self.interface.poll_egress(Self::now(), &mut self.ethernet, &mut self.sockets);
-        }
+        ack
     }
-
+    
     fn dhcp_poll(&mut self) {
         let event = self.sockets.get_mut::<dhcpv4::Socket>(self.dhcp).poll();
         match event {
@@ -419,11 +463,14 @@ impl <'a, CLOCK: Clock, U: UsbBus> Gadget<'a, CLOCK, U> {
                 for (i, s) in config.dns_servers.iter().enumerate() {
                     debug!("DNS server {}:    {}", i, s);
                 }
+
+                self.state = IpState::Configured;
             }
             Some(dhcpv4::Event::Deconfigured) => {
                 debug!("DHCP lost config!");
                 self.interface.update_ip_addrs(|addrs| addrs.clear());
                 self.interface.routes_mut().remove_default_ipv4_route();
+                self.state = IpState::Unconfigured;
             }
         }
 
